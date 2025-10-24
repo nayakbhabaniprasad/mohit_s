@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Fraud and Risk Scanner - Init Hook
+# This hook runs when the service starts
+
+echo "Starting Fraud and Risk Scanner application..."
+
+# Set up logging
+mkdir -p /hab/svc/fraud-risk-scanner/logs
+
+# Create application configuration
+cat > /hab/svc/fraud-risk-scanner/config/application.properties << EOF
+server.port={{cfg.server_port}}
+management.server.port={{cfg.management_server_port}}
+logging.level={{cfg.logging_level}}
+logging.file.name=/hab/svc/fraud-risk-scanner/logs/fraud-risk-scanner.log
+EOF
+
+echo "Fraud and Risk Scanner configuration created"

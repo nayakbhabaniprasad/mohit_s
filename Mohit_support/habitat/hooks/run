@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Fraud and Risk Scanner - Run Hook
+# This hook runs the application
+
+echo "Starting Fraud and Risk Scanner application..."
+
+# Set Java options
+export JAVA_OPTS="-Xms512m -Xmx1024m -Dspring.profiles.active=habitat"
+
+# Start the application
+exec java $JAVA_OPTS -jar /hab/svc/fraud-risk-scanner/app.jar \
+  --spring.config.location=file:/hab/svc/fraud-risk-scanner/config/application.properties

@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Fraud and Risk Scanner - Health Check Hook
+# This hook performs health checks for the application
+
+echo "Performing health check for Fraud and Risk Scanner..."
+
+# Check if the application is responding
+HEALTH_URL="http://localhost:{{cfg.management_server_port}}/actuator/health"
+
+# Try to connect to the health endpoint
+if curl -f -s "$HEALTH_URL" > /dev/null 2>&1; then
+    echo "Health check passed: Application is responding"
+    exit 0
+else
+    echo "Health check failed: Application is not responding"
+    exit 1
+fi

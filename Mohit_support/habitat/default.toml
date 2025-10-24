@@ -1,0 +1,22 @@
+[package]
+name = "fraud-risk-scanner"
+version = "0.1.0"
+description = "Fraud and Risk Scanner Application"
+maintainer = "BizOps Bank <bizops-bank@mastercard.com>"
+license = "Proprietary"
+
+[build]
+source = "src"
+
+[dependencies]
+openjdk21 = "*"
+curl = "*"
+
+[exposes]
+port = 8080
+management_port = 8081
+
+[config]
+server_port = 8080
+management_server_port = 8081
+logging_level = "INFO"
