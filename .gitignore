@@ -71,12 +71,12 @@ logs/
 *.rar
 
 # Application specific
-images/
-*.jpg
-*.jpeg
-*.png
-*.gif
-*.pdf
+# images/
+# *.jpg
+# *.jpeg
+# *.png
+# *.gif
+# *.pdf
 
 # Sensitive information
 *.properties
