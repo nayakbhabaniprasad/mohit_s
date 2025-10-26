@@ -1,0 +1,104 @@
+# Compiled class files
+*.class
+
+# Maven build directories
+target/
+*/target/
+**/target/
+
+# IDE - VSCode
+.vscode/
+*.code-workspace
+
+# IDE - IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# IDE - Eclipse
+.settings/
+.classpath
+.project
+.metadata
+bin/
+build/
+
+# IDE - NetBeans
+nbproject/
+build/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
+
+# OS - macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# OS - Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# OS - Linux
+*~
+.directory
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.bak
+*.cache
+
+# Package files
+*.jar
+!**/dependencies/*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Application specific
+images/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.pdf
+
+# Sensitive information
+*.properties
+!**/src/main/resources/*.properties
+*.env
+*.key
+*.pem
+*.p12
+
+# Backup files
+*.orig
+*~
+
+# Test output
+test-output/
+surefire-reports/
+failsafe-reports/
+
+# Habitat
+results/
+*.hart
+
+# Others
+.gradle/
+node_modules/
