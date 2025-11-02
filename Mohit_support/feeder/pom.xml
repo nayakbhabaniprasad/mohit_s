@@ -34,6 +34,23 @@
             <version>1.2.12</version>
         </dependency>
 
+        <!-- Note: Using Java 11+ built-in HttpClient for Netcool integration -->
+        <!-- Apache HttpClient 5 available for future use if needed -->
+        <!--
+        <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+            <version>5.2.1</version>
+        </dependency>
+        -->
+
+        <!-- JSON processing for alerts -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.10.1</version>
+        </dependency>
+
         <!-- Test Dependencies -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>

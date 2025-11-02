@@ -63,5 +63,15 @@ maxHeap = "512m"
 [standalone.application.serverConfiguration.serverLogging]
 CustomLogMessage = "Scanner in the Penguin"
 
+#[feeder.monitoring]
+#report_directories = [
+#  "/home/bizopsbank/reports",
+#  "/home/bizopsbank/archive/reports"
+#]
+#scan_interval_minutes = 5
+#alert_threshold_hours = 24
+#netcool_url = "https://netcool.mastercard.int/api/alerts"
+#netcool_timeout_seconds = 30
+
 #[standalone.penguinclicker.example]
 #string="Handlebar syntax works!"
