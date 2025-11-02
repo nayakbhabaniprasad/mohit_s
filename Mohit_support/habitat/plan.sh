@@ -1,62 +1,45 @@
 #!/bin/bash
 
-# Fraud and Risk Scanner Habitat Plan
-pkg_name=fraud-risk-scanner
-pkg_origin=mastercard
-pkg_version=0.1.0
-pkg_maintainer="BizOps Bank <bizops-bank@mastercard.com>"
-pkg_license=("Proprietary")
-pkg_description="Fraud and Risk Scanner Application"
-pkg_upstream_url="https://github.com/mastercard/fraud-risk-scanner"
+# Fraud and Risk Scanner - Scanner Habitat Plan
+pkg_name='scanner'
+pkg_origin='bizopsbank'
+pkg_maintainer="BizOps Bank <bizopsbank@mastercard.com>"
+pkg_license=("Mastercard")
+pkg_description="scanner"
+pkg_scaffolding='mastercard/scaffolding_java_standalone'
+scaffold_java_major_minor='1.21'
 
 # Dependencies
-pkg_deps=(
-  core/openjdk21
-  core/curl
-)
+#pkg_deps=(mastercard/zulujdk11)
+pkg_build_deps=(mastercard/maven mastercard/zulujdk11)
 
-# Build dependencies
-pkg_build_deps=(
-  core/maven
-  core/git
-)
+# Scaffolding specific variables
+standalone_app_artifactory_url="https://artifacts.mastercard.int/artifactory/snapshots/com/mastercard/fraud-risk-scanner-scanner/0.1.0-SNAPSHOT/fraud-risk-scanner-scanner-0.1.0-SNAPSHOT.jar"
+#standalone_app_artifactory_url="https://artifacts.mastercard.int/artifactory/releases/com/mastercard/fraud-risk-scanner-scanner/0.1.0/fraud-risk-scanner-scanner-0.1.0.jar"
+standalone_app_name="scanner"
 
-# Application configuration
-pkg_exports=(
-  [port]=server.port
-  [management_port]=management.server.port
-)
-
-pkg_exposes=(port management_port)
-
-# Default configuration
-pkg_svc_user="hab"
-pkg_svc_group="hab"
-
-# Build process
-do_build() {
-  mvn clean package -DskipTests
+do_prepare() {
+  pkg_svc_user='hab'
+  pkg_svc_group='hab'
 }
 
-do_install() {
-  # Install the JAR file
-  cp target/fraud-risk-scanner-*.jar "${pkg_prefix}/app.jar"
-  
-  # Install configuration files
-  cp -r src/main/resources/* "${pkg_prefix}/config/" 2>/dev/null || true
-  
-  # Create logs directory
-  mkdir -p "${pkg_prefix}/logs"
-}
+pkg_version='0.1.0-SNAPSHOT'
+#pkg_version='0.1.0'
 
-# Health check
-do_check() {
-  # Basic health check - verify JAR exists
-  if [ ! -f "${pkg_prefix}/app.jar" ]; then
-    echo "ERROR: Application JAR not found"
-    return 1
-  fi
-  
-  echo "Health check passed: Application JAR found"
-  return 0
-}
+#pkg_version() {
+#  pushd /src > /dev/null
+#  $(pkg_path_for mastercard/maven)/bin/mvn help:evaluate -Dexpression=project.version -q -DforceStdout
+#  popd > /dev/null
+#}
+
+#do_before() {
+#  update_pkg_version
+#}
+
+#do_build() {
+#  $(pkg_path_for mastercard/maven)/bin/mvn clean install
+#}
+
+#do_install() {
+#  cp /src/target/${pkg_name}-${pkg_version}.jar ${pkg_prefix}/${pkg_name}.jar
+#}

@@ -66,7 +66,7 @@ fraud-risk-scanner/
 
 - Java 21
 - Maven 3.6+
-- Habitat CLI
+- Habitat CLI  # clarify with 
 
 ### Local Build
 

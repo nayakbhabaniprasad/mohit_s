@@ -51,6 +51,8 @@ The Alert Bridge receives Risk objects from other components and acts as the fin
 ### Purpose
 The Feeder application processes report files originating from external processes. It manages file lifecycle and ensures single processing across a cluster using an expiring semaphore mechanism.
 
+
+
 ### Overview
 The Feeder application reads report files from defined source directories (configured via `.toml` files) and manages their processing lifecycle through three possible outcomes:
 - **Successfully Processed**: File is moved to a completion directory

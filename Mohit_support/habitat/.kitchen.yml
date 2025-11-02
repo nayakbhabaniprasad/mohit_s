@@ -1,0 +1,21 @@
+---
+provisioner:
+  name: habitat
+  package_name: scanner
+verifier:
+  name: inspec
+platforms:
+  - name: linux-7
+    driver:
+      name: docker
+      driver_config:
+        image: artifacts.mastercard.int/docker-internal-unstable/dev-cloud/oracle:7.6_chef15_latest
+        platform: rhel
+        privileged: true
+suites:
+  - name: default
+    includes:
+      - linux-7
+    provisioner:
+      provision_script_name: 'default.sh'
+

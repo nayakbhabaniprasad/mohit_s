@@ -1,22 +1,67 @@
-[package]
-name = "fraud-risk-scanner"
-version = "0.1.0"
-description = "Fraud and Risk Scanner Application"
-maintainer = "BizOps Bank <bizops-bank@mastercard.com>"
-license = "Proprietary"
+# these are commented out samples from the penguinclicker_standalone
+###
 
-[build]
-source = "src"
+[standalone.application]
+name = "scanner"
+esf_program_id = ""
+esf_application_id = ""
 
-[dependencies]
-openjdk21 = "*"
-curl = "*"
+#[t3]
+#url="https://lst14wtc8184.mastercard.int:25004/api"
+#username="T3_BIZOPS_BANK_AUTOMATION"
+#password="slInLUZ00128T$"
 
-[exposes]
-port = 8080
-management_port = 8081
+#[schedule]
+#filepath="/home/bizopsbank/schedule.json"
 
-[config]
-server_port = 8080
-management_server_port = 8081
-logging_level = "INFO"
+#[[standalone.application.files]]
+#source = "dev/dev_example.txt"
+#destination = "files"
+
+#[[standalone.application.files]]
+#source = "dev/dev_example2.txt"
+#destination = "files"
+
+#[[standalone.application.systemProperties]]
+#property_name = "prop1"
+#property_value = "example1"
+
+#[[standalone.application.systemProperties]]
+#property_name = "prop2"
+#property_value = "example2"
+
+#[standalone.application.configTest.example]
+#text = "SUCCESS"
+
+#[standalone.application.environmentEntries]
+#SPECIAL_ENV_VARIABLE = "whateva"
+#ENV_VAR_INT_CHARS = 6000
+#ENV_VAR_SPECIAL_CHARS = ""
+##Used to demonstrate how to set the environment variables for log
+#LOG4J_FORMAT_MSG_NO_LOOKUPS = "true"
+#COM_SUN_JNDI_RMI_OBJECT_TRUSTURLCODEBASE = "false"
+#COM_SUN_JNDI_COSNAMING_OBJECT_TRUSTURLCODEBASE = "false"
+
+[standalone.application.serverConfiguration]
+protocol = ""
+#protocol = "http"
+#portOffset = 0
+#startScriptShutdownKillTimeout = 10
+
+[standalone.application.serverConfiguration.jvm]
+minHeap = "512m"
+maxHeap = "512m"
+#gcOpts = ""
+
+#[standalone.application.security]
+#calist = [
+#  "mc_internal_stg",
+#  "mastercard_prd_application_infrastructure_g2"
+#]
+#truststore_vault_label="chef_t3scheduler-eportal"
+
+[standalone.application.serverConfiguration.serverLogging]
+CustomLogMessage = "Scanner in the Penguin"
+
+#[standalone.penguinclicker.example]
+#string="Handlebar syntax works!"
