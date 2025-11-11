@@ -1,0 +1,12 @@
+hazelcast:
+  cluster-name: fraud-risk-scanner-feeder
+  network:
+    join:
+      multicast:
+        enabled: false
+      tcp-ip:
+        enabled: false
+  properties:
+    hazelcast.logging.type: slf4j
+
+
