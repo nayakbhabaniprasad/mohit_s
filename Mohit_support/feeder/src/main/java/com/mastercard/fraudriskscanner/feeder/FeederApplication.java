@@ -1,38 +1,89 @@
 package com.mastercard.fraudriskscanner.feeder;
 
 import com.hazelcast.core.HazelcastInstance;
+import com.mastercard.fraudriskscanner.feeder.config.FeederConfig;
 import com.mastercard.fraudriskscanner.feeder.hazelcast.HazelcastProvider;
+import com.mastercard.fraudriskscanner.feeder.scanning.DirectoryScanner;
+import com.mastercard.fraudriskscanner.feeder.scanning.ScheduledDirectoryScanner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Feeder Application - Hazelcast bootstrap
- *
- * First step: Provide a running Hazelcast database for distributed coordination.
+ * Feeder Application
+ * 
+ * Scans NGFT directories for files and adds them to Hazelcast database.
+ * 
+ * @author BizOps Bank Team
  */
 public class FeederApplication {
 
 	private static final Logger logger = LoggerFactory.getLogger(FeederApplication.class);
+	
+	private FeederConfig config;
+	private ScheduledDirectoryScanner scheduledScanner;
 
 	public static void main(String[] args) {
-		logger.info("FRS_0200 Starting Feeder Application (Hazelcast bootstrap)");
+		FeederApplication app = new FeederApplication();
+		app.start();
+		app.run();
+	}
 
-		// 1) Start Hazelcast (embedded)
-		HazelcastInstance hazelcast = HazelcastProvider.getInstance();
-		logger.info("Hazelcast started. Member: {}", hazelcast.getName());
-		logger.info("Hazelcast cluster: {}", hazelcast.getCluster().getClusterState());
+	/**
+	 * Initialize and start the application.
+	 */
+	private void start() {
+		logger.info("FRS_0200 Starting Feeder Application");
 
-		// 2) Register graceful shutdown
-		Runtime.getRuntime().addShutdownHook(new Thread(HazelcastProvider::shutdown, "hazelcast-shutdown"));
-
-		logger.info("FRS_0201 Feeder Application is running. Hazelcast is ready.");
-
-		// Keep the application running
 		try {
+			// 1) Load configuration
+			config = new FeederConfig();
+
+			// 2) Start Hazelcast (embedded)
+			HazelcastInstance hazelcast = HazelcastProvider.getInstance();
+			logger.info("Hazelcast started. Member: {}", hazelcast.getName());
+			logger.info("Hazelcast cluster: {}", hazelcast.getCluster().getClusterState());
+
+			// 3) Initialize directory scanning
+			DirectoryScanner directoryScanner = new DirectoryScanner();
+			scheduledScanner = new ScheduledDirectoryScanner(config, directoryScanner);
+			scheduledScanner.start();
+
+			// 4) Register graceful shutdown
+			Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+				logger.info("FRS_0202 Shutdown signal received");
+				shutdown();
+			}, "feeder-shutdown"));
+
+			logger.info("FRS_0201 Feeder Application is running. Directory scanning started.");
+
+		} catch (Exception e) {
+			logger.error("FRS_0203 Failed to start Feeder Application", e);
+			throw new RuntimeException("FRS_0203 Feeder startup failed", e);
+		}
+	}
+
+	/**
+	 * Keep application running until interrupted.
+	 */
+	private void run() {
+		try {
+			// Sleep indefinitely, waiting for shutdown signal
 			Thread.sleep(Long.MAX_VALUE);
 		} catch (InterruptedException e) {
 			logger.info("Feeder Application interrupted");
+			shutdown();
 			Thread.currentThread().interrupt();
 		}
+	}
+
+	/**
+	 * Graceful shutdown of all services.
+	 */
+	private void shutdown() {
+		if (scheduledScanner != null) {
+			scheduledScanner.stop();
+		}
+		HazelcastProvider.shutdown();
+		logger.info("FRS_0202 Feeder Application stopped");
 	}
 }
