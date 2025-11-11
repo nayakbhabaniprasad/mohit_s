@@ -5,6 +5,7 @@ import com.mastercard.fraudriskscanner.feeder.config.FeederConfig;
 import com.mastercard.fraudriskscanner.feeder.hazelcast.HazelcastProvider;
 import com.mastercard.fraudriskscanner.feeder.scanning.DirectoryScanner;
 import com.mastercard.fraudriskscanner.feeder.scanning.ScheduledDirectoryScanner;
+import com.mastercard.fraudriskscanner.feeder.semaphore.HazelcastSemaphoreManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,9 +44,12 @@ public class FeederApplication {
 			logger.info("Hazelcast started. Member: {}", hazelcast.getName());
 			logger.info("Hazelcast cluster: {}", hazelcast.getCluster().getClusterState());
 
-			// 3) Initialize directory scanning
+			// 3) Initialize semaphore manager (for adding files to Hazelcast)
+			HazelcastSemaphoreManager semaphoreManager = new HazelcastSemaphoreManager(hazelcast, config);
+			
+			// 4) Initialize directory scanning
 			DirectoryScanner directoryScanner = new DirectoryScanner();
-			scheduledScanner = new ScheduledDirectoryScanner(config, directoryScanner);
+			scheduledScanner = new ScheduledDirectoryScanner(config, directoryScanner, semaphoreManager);
 			scheduledScanner.start();
 
 			// 4) Register graceful shutdown

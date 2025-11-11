@@ -57,10 +57,13 @@ class DirectoryScannerTest {
 	@Test
 	void testScanDirectory_NonExistentDirectory() {
 		// Scan non-existent directory
-		List<File> files = scanner.scanDirectory("/non/existent/path");
-
-		// Verify results
-		assertTrue(files.isEmpty(), "Should return empty list for non-existent directory");
+		try {
+			List<File> files = scanner.scanDirectory("/non/existent/path");
+			// Verify results
+			assertTrue(files.isEmpty(), "Should return empty list for non-existent directory");
+		} catch (IOException e) {
+			fail("Should not throw IOException for non-existent directory");
+		}
 	}
 
 	@Test
