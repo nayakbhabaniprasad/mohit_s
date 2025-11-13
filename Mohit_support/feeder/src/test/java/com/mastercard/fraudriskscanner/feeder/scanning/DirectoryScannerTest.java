@@ -4,7 +4,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,61 +28,64 @@ class DirectoryScannerTest {
 	}
 
 	@Test
-	void testScanDirectory_WithFiles() throws IOException {
+	void testScanDirectories_WithFiles() throws IOException {
 		// Create test files
 		Path file1 = tempDir.resolve("report1.txt");
 		Path file2 = tempDir.resolve("report2.csv");
 		Files.createFile(file1);
 		Files.createFile(file2);
 
-		// Scan directory
-		List<File> files = scanner.scanDirectory(tempDir.toString());
-
-		// Verify results
-		assertEquals(2, files.size(), "Should find 2 files");
-		assertTrue(files.stream().anyMatch(f -> f.getName().equals("report1.txt")));
-		assertTrue(files.stream().anyMatch(f -> f.getName().equals("report2.csv")));
-	}
-
-	@Test
-	void testScanDirectory_EmptyDirectory() throws IOException {
-		// Scan empty directory
-		List<File> files = scanner.scanDirectory(tempDir.toString());
-
-		// Verify results
-		assertTrue(files.isEmpty(), "Should find no files in empty directory");
-	}
-
-	@Test
-	void testScanDirectory_NonExistentDirectory() {
-		// Scan non-existent directory
-		try {
-			List<File> files = scanner.scanDirectory("/non/existent/path");
+		// Scan directory using stream
+		try (var fileStream = scanner.scanDirectories(List.of(tempDir.toString()))) {
+			List<Path> files = fileStream.toList();
+			
 			// Verify results
-			assertTrue(files.isEmpty(), "Should return empty list for non-existent directory");
-		} catch (IOException e) {
-			fail("Should not throw IOException for non-existent directory");
+			assertEquals(2, files.size(), "Should find 2 files");
+			assertTrue(files.stream().anyMatch(p -> p.getFileName().toString().equals("report1.txt")));
+			assertTrue(files.stream().anyMatch(p -> p.getFileName().toString().equals("report2.csv")));
 		}
 	}
 
 	@Test
-	void testScanDirectory_IgnoresHiddenFiles() throws IOException {
+	void testScanDirectories_EmptyDirectory() throws IOException {
+		// Scan empty directory using stream
+		try (var fileStream = scanner.scanDirectories(List.of(tempDir.toString()))) {
+			long count = fileStream.count();
+			// Verify results
+			assertEquals(0, count, "Should find no files in empty directory");
+		}
+	}
+
+	@Test
+	void testScanDirectories_NonExistentDirectory() {
+		// Scan non-existent directory using stream
+		try (var fileStream = scanner.scanDirectories(List.of("/non/existent/path"))) {
+			long count = fileStream.count();
+			// Verify results
+			assertEquals(0, count, "Should return empty stream for non-existent directory");
+		}
+	}
+
+	@Test
+	void testScanDirectories_IgnoresHiddenFiles() throws IOException {
 		// Create visible and hidden files
 		Path visibleFile = tempDir.resolve("visible.txt");
 		Path hiddenFile = tempDir.resolve(".hidden");
 		Files.createFile(visibleFile);
 		Files.createFile(hiddenFile);
 
-		// Scan directory
-		List<File> files = scanner.scanDirectory(tempDir.toString());
-
-		// Verify results
-		assertEquals(1, files.size(), "Should find only visible file");
-		assertEquals("visible.txt", files.get(0).getName());
+		// Scan directory using stream
+		try (var fileStream = scanner.scanDirectories(List.of(tempDir.toString()))) {
+			List<Path> files = fileStream.toList();
+			
+			// Verify results
+			assertEquals(1, files.size(), "Should find only visible file");
+			assertEquals("visible.txt", files.get(0).getFileName().toString());
+		}
 	}
 
 	@Test
-	void testScanDirectory_IgnoresTempFiles() throws IOException {
+	void testScanDirectories_IgnoresTempFiles() throws IOException {
 		// Create regular and temp files
 		Path regularFile = tempDir.resolve("report.txt");
 		Path tempFile = tempDir.resolve("report.tmp");
@@ -92,28 +94,32 @@ class DirectoryScannerTest {
 		Files.createFile(tempFile);
 		Files.createFile(tempFile2);
 
-		// Scan directory
-		List<File> files = scanner.scanDirectory(tempDir.toString());
-
-		// Verify results
-		assertEquals(1, files.size(), "Should find only regular file");
-		assertEquals("report.txt", files.get(0).getName());
+		// Scan directory using stream
+		try (var fileStream = scanner.scanDirectories(List.of(tempDir.toString()))) {
+			List<Path> files = fileStream.toList();
+			
+			// Verify results
+			assertEquals(1, files.size(), "Should find only regular file");
+			assertEquals("report.txt", files.get(0).getFileName().toString());
+		}
 	}
 
 	@Test
-	void testScanDirectory_IgnoresSubdirectories() throws IOException {
+	void testScanDirectories_IgnoresSubdirectories() throws IOException {
 		// Create file and subdirectory
 		Path file = tempDir.resolve("report.txt");
 		Path subdir = tempDir.resolve("subdir");
 		Files.createFile(file);
 		Files.createDirectory(subdir);
 
-		// Scan directory
-		List<File> files = scanner.scanDirectory(tempDir.toString());
-
-		// Verify results
-		assertEquals(1, files.size(), "Should find only file, not subdirectory");
-		assertEquals("report.txt", files.get(0).getName());
+		// Scan directory using stream
+		try (var fileStream = scanner.scanDirectories(List.of(tempDir.toString()))) {
+			List<Path> files = fileStream.toList();
+			
+			// Verify results
+			assertEquals(1, files.size(), "Should find only file, not subdirectory");
+			assertEquals("report.txt", files.get(0).getFileName().toString());
+		}
 	}
 
 	@Test
@@ -128,13 +134,13 @@ class DirectoryScannerTest {
 		Files.createFile(dir1.resolve("file1.txt"));
 		Files.createFile(dir2.resolve("file2.txt"));
 
-		// Scan multiple directories
-		List<File> files = scanner.scanDirectories(
+		// Scan multiple directories using stream
+		try (var fileStream = scanner.scanDirectories(
 			List.of(dir1.toString(), dir2.toString())
-		);
-
-		// Verify results
-		assertEquals(2, files.size(), "Should find files from both directories");
+		)) {
+			long count = fileStream.count();
+			assertEquals(2, count, "Should find files from both directories");
+		}
 	}
 
 	@Test
@@ -144,13 +150,14 @@ class DirectoryScannerTest {
 		Files.createDirectory(validDir);
 		Files.createFile(validDir.resolve("file.txt"));
 
-		// Scan directories (one valid, one invalid)
-		List<File> files = scanner.scanDirectories(
+		// Scan directories (one valid, one invalid) using stream
+		try (var fileStream = scanner.scanDirectories(
 			List.of(validDir.toString(), "/non/existent/path")
-		);
-
-		// Verify results - should still find files from valid directory
-		assertEquals(1, files.size(), "Should find files from valid directory even if one fails");
+		)) {
+			long count = fileStream.count();
+			// Verify results - should still find files from valid directory even if one fails
+			assertEquals(1, count, "Should find files from valid directory even if one fails");
+		}
 	}
 }
 

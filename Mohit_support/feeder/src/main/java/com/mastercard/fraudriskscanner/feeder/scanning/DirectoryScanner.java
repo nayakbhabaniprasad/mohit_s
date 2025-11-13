@@ -3,19 +3,17 @@ package com.mastercard.fraudriskscanner.feeder.scanning;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.stream.Stream;
 
 /**
  * Service for scanning directories and finding candidate files.
  * 
+ * Uses Java Streams to provide a functional, lightweight approach.
  * Filters out directories, hidden files, and temporary files.
  * 
  * @author BizOps Bank Team
@@ -25,71 +23,59 @@ public final class DirectoryScanner {
 	private static final Logger logger = LoggerFactory.getLogger(DirectoryScanner.class);
 	
 	/**
-	 * Scan all configured directories and return candidate files.
+	 * Scan all configured directories and return a stream of candidate file paths.
+	 * 
+	 * Uses flatMap to combine streams from multiple directories.
 	 * 
 	 * @param directoryPaths list of directory paths to scan
-	 * @return list of candidate files found
+	 * @return stream of candidate file paths
 	 */
-	public List<File> scanDirectories(List<String> directoryPaths) {
+	public Stream<Path> scanDirectories(List<String> directoryPaths) {
 		logger.info("FRS_0430 Starting directory scan for {} directory(ies)", directoryPaths.size());
 		
-		List<File> allFiles = new ArrayList<>();
-		
-		for (String directoryPath : directoryPaths) {
-			try {
-				List<File> files = scanDirectory(directoryPath);
-				allFiles.addAll(files);
-				logger.info("FRS_0433 Found {} file(s) in directory: {}", files.size(), directoryPath);
-			} catch (Exception e) {
-				logger.error("FRS_0432 Failed to scan directory: {}", directoryPath, e);
-				// Continue scanning other directories even if one fails
-			}
-		}
-		
-		logger.info("FRS_0431 Directory scan completed. Total files found: {}", allFiles.size());
-		return Collections.unmodifiableList(allFiles);
+		return directoryPaths.stream()
+			.flatMap(this::scanDirectoryToStream)
+			.onClose(() -> logger.info("FRS_0431 Directory scan stream closed"));
 	}
 	
 	/**
-	 * Scan a single directory for candidate files.
+	 * Scan a single directory and return a stream of candidate file paths.
 	 * 
 	 * @param directoryPath path to directory to scan
-	 * @return list of candidate files found
-	 * @throws IOException if directory cannot be accessed
+	 * @return stream of candidate file paths (empty stream if directory doesn't exist or can't be read)
 	 */
-	public List<File> scanDirectory(String directoryPath) throws IOException {
+	private Stream<Path> scanDirectoryToStream(String directoryPath) {
 		Path path = Paths.get(directoryPath);
 		
 		// Validate directory exists
 		if (!Files.exists(path)) {
 			logger.warn("FRS_0432 Directory does not exist: {}", directoryPath);
-			return Collections.emptyList();
+			return Stream.empty();
 		}
 		
 		// Validate it's actually a directory
 		if (!Files.isDirectory(path)) {
 			logger.warn("FRS_0432 Path is not a directory: {}", directoryPath);
-			return Collections.emptyList();
+			return Stream.empty();
 		}
 		
 		// Validate directory is readable
 		if (!Files.isReadable(path)) {
 			logger.warn("FRS_0432 Directory is not readable: {}", directoryPath);
-			return Collections.emptyList();
+			return Stream.empty();
 		}
 		
-		// Scan directory for files
-		List<File> candidateFiles = new ArrayList<>();
-		
-		try (Stream<Path> paths = Files.list(path)) {
-			paths.forEach(filePath -> {
-				if (isCandidateFile(filePath)) {
-					candidateFiles.add(filePath.toFile());
-				}
-			});
+		// Scan directory for files using Stream
+		try {
+			Stream<Path> fileStream = Files.list(path)
+				.filter(this::isCandidateFile)
+				.onClose(() -> logger.debug("FRS_0433 Finished scanning directory: {}", directoryPath));
+			
+			return fileStream;
+		} catch (IOException e) {
+			logger.error("FRS_0432 Failed to scan directory: {}", directoryPath, e);
+			return Stream.empty();
 		}
-		
-		return Collections.unmodifiableList(candidateFiles);
 	}
 	
 	/**

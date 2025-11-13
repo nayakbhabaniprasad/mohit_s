@@ -6,12 +6,13 @@ import com.mastercard.fraudriskscanner.feeder.semaphore.HazelcastSemaphoreManage
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.util.List;
+import java.nio.file.Path;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Stream;
 
 /**
  * Scheduled service that periodically scans directories for files.
@@ -106,7 +107,13 @@ public final class ScheduledDirectoryScanner {
 	}
 	
 	/**
-	 * Perform a single scan cycle.
+	 * Perform a single scan cycle using Clay's streaming approach.
+	 * 
+	 * Pipeline:
+	 * 1. Stream<Path> from directory scanner
+	 * 2. Map Path to FileFingerprint (bound file name object)
+	 * 3. Consumer adds to Hazelcast via semaphore manager
+	 * 
 	 * This method is called by the scheduler.
 	 */
 	private void performScan() {
@@ -117,45 +124,72 @@ public final class ScheduledDirectoryScanner {
 		try {
 			logger.info("FRS_0442 Starting scan cycle");
 			
-			List<File> files = directoryScanner.scanDirectories(config.getSourceDirectories());
+			// Counters for summary
+			AtomicLong processedCount = new AtomicLong(0);
+			AtomicLong skippedCount = new AtomicLong(0);
 			
-			logger.info("FRS_0443 Scan cycle completed. Found {} file(s)", files.size());
-			
-			// Process each file: add to Hazelcast using semaphore logic
-			int processedCount = 0;
-			int skippedCount = 0;
-			
-			for (File file : files) {
-				try {
-					// Calculate fingerprint from filename
-					FileFingerprint fingerprint = FileFingerprint.fromFileName(file.getName());
-					
-					// Check if file should be processed (adds to Hazelcast if new)
-					boolean shouldProcess = semaphoreManager.shouldProcessFile(fingerprint);
-					
-					if (shouldProcess) {
-						// File is new - added to Hazelcast
-						processedCount++;
-						logger.info("FRS_0421 File added to Hazelcast: {} (mapKey: {})", 
-							file.getName(), fingerprint.getMapKey());
-					} else {
-						// File already in Hazelcast - skip
-						skippedCount++;
-						logger.debug("FRS_0423 File already in Hazelcast (skip): {}", file.getName());
-					}
-					
-				} catch (Exception e) {
-					logger.error("FRS_0422 Failed to process file: {}", file.getName(), e);
-					// Continue with next file
-				}
+			// Clay's streaming approach:
+			// Stream<Path> -> map to FileFingerprint -> consumer adds to Hazelcast
+			try (Stream<Path> fileStream = directoryScanner.scanDirectories(config.getSourceDirectories())) {
+				fileStream
+					// Map Path to FileFingerprint (bound file name object)
+					.map(this::pathToFingerprint)
+					// Filter out nulls (files that failed fingerprint creation)
+					.filter(java.util.Objects::nonNull)
+					// Consumer: add to Hazelcast via semaphore manager
+					.forEach(fingerprint -> processFingerprint(fingerprint, processedCount, skippedCount));
 			}
 			
 			logger.info("FRS_0443 Scan cycle summary: {} new files added to Hazelcast, {} files skipped", 
-				processedCount, skippedCount);
+				processedCount.get(), skippedCount.get());
 			
 		} catch (Exception e) {
 			logger.error("FRS_0442 Scan cycle failed", e);
 			// Don't re-throw - allow scheduler to continue
+		}
+	}
+	
+	/**
+	 * Map Path to FileFingerprint (bound file name object).
+	 * 
+	 * @param path file path
+	 * @return FileFingerprint or null if creation fails
+	 */
+	private FileFingerprint pathToFingerprint(Path path) {
+		try {
+			String fileName = path.getFileName().toString();
+			return FileFingerprint.fromFileName(fileName);
+		} catch (Exception e) {
+			logger.error("FRS_0422 Failed to create fingerprint for file: {}", path, e);
+			return null;
+		}
+	}
+	
+	/**
+	 * Consumer that processes a fingerprint and adds it to Hazelcast.
+	 * 
+	 * @param fingerprint file fingerprint
+	 * @param processedCount counter for processed files
+	 * @param skippedCount counter for skipped files
+	 */
+	private void processFingerprint(FileFingerprint fingerprint, AtomicLong processedCount, AtomicLong skippedCount) {
+		try {
+			// Check if file should be processed (adds to Hazelcast if new)
+			boolean shouldProcess = semaphoreManager.shouldProcessFile(fingerprint);
+			
+			if (shouldProcess) {
+				// File is new - added to Hazelcast
+				processedCount.incrementAndGet();
+				logger.info("FRS_0421 File added to Hazelcast: {} (mapKey: {})", 
+					fingerprint.getFileName(), fingerprint.getMapKey());
+			} else {
+				// File already in Hazelcast - skip
+				skippedCount.incrementAndGet();
+				logger.debug("FRS_0423 File already in Hazelcast (skip): {}", fingerprint.getFileName());
+			}
+		} catch (Exception e) {
+			logger.error("FRS_0422 Failed to process file: {}", fingerprint.getFileName(), e);
+			// Continue with next file (exception already logged)
 		}
 	}
 	
