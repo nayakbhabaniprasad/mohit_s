@@ -108,6 +108,76 @@ class FeederConfigTest {
 		assertFalse(config.getSourceDirectories().isEmpty());
 	}
 
+	@Test
+	void testSourceDirectories_FromCommandLine() {
+		// Set environment variable (should be overridden by command-line)
+		System.setProperty("FEEDER_SOURCE_DIRECTORIES", "/env/path1,/env/path2");
+
+		// Create config with command-line argument
+		FeederConfig config = new FeederConfig("/cmd/path1,/cmd/path2");
+		List<String> dirs = config.getSourceDirectories();
+
+		// Verify command-line directories are used (not environment variable)
+		assertEquals(2, dirs.size());
+		assertTrue(dirs.contains("/cmd/path1"));
+		assertTrue(dirs.contains("/cmd/path2"));
+		assertFalse(dirs.contains("/env/path1"));
+	}
+
+	@Test
+	void testSourceDirectories_CommandLineOverridesEnvironment() {
+		// Set environment variable
+		System.setProperty("FEEDER_SOURCE_DIRECTORIES", "/env/path");
+
+		// Command-line should take precedence
+		FeederConfig config = new FeederConfig("/cmd/path");
+		List<String> dirs = config.getSourceDirectories();
+
+		assertEquals(1, dirs.size());
+		assertTrue(dirs.contains("/cmd/path"));
+		assertFalse(dirs.contains("/env/path"));
+	}
+
+	@Test
+	void testSourceDirectories_CommandLineWithMultipleDirectories() {
+		FeederConfig config = new FeederConfig("/path1,/path2;/path3");
+		List<String> dirs = config.getSourceDirectories();
+
+		// Verify all directories are parsed (comma and semicolon separated)
+		assertEquals(3, dirs.size());
+		assertTrue(dirs.contains("/path1"));
+		assertTrue(dirs.contains("/path2"));
+		assertTrue(dirs.contains("/path3"));
+	}
+
+	@Test
+	void testSourceDirectories_CommandLineNullFallsBackToEnvironment() {
+		// Set environment variable
+		System.setProperty("FEEDER_SOURCE_DIRECTORIES", "/env/path");
+
+		// Pass null (no command-line argument)
+		FeederConfig config = new FeederConfig(null);
+		List<String> dirs = config.getSourceDirectories();
+
+		// Should use environment variable
+		assertEquals(1, dirs.size());
+		assertTrue(dirs.contains("/env/path"));
+	}
+
+	@Test
+	void testSourceDirectories_CommandLineEmptyFallsBackToEnvironment() {
+		// Set environment variable
+		System.setProperty("FEEDER_SOURCE_DIRECTORIES", "/env/path");
+
+		// Pass empty string (no command-line argument)
+		FeederConfig config = new FeederConfig("");
+		List<String> dirs = config.getSourceDirectories();
+
+		// Should use environment variable
+		assertEquals(1, dirs.size());
+		assertTrue(dirs.contains("/env/path"));
+	}
+
 	/**
 	 * Clear environment variables used in tests.
 	 */

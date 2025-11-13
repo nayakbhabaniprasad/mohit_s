@@ -25,12 +25,18 @@ public final class FeederConfig {
 	private final List<String> sourceDirectories;
 	private final int scanIntervalMinutes;
 	private final String hazelcastMapName;
+	private final String sourceDirectoriesSource; // Track where source directories came from
 	
 	/**
-	 * Load configuration from environment variables.
+	 * Load configuration from command-line arguments, environment variables, or defaults.
+	 * Priority: Command-line args > Environment variables > Defaults
+	 * 
+	 * @param commandLineSourceDirectories source directories from command line (can be null)
 	 */
-	public FeederConfig() {
-		this.sourceDirectories = loadSourceDirectories();
+	public FeederConfig(String commandLineSourceDirectories) {
+		SourceDirectoriesResult result = loadSourceDirectories(commandLineSourceDirectories);
+		this.sourceDirectories = result.directories;
+		this.sourceDirectoriesSource = result.source;
 		this.scanIntervalMinutes = loadScanIntervalMinutes();
 		this.hazelcastMapName = loadHazelcastMapName();
 		
@@ -39,19 +45,63 @@ public final class FeederConfig {
 	}
 	
 	/**
-	 * Load source directories from environment variable.
-	 * Supports comma or semicolon separated values.
+	 * Result of loading source directories.
 	 */
-	private List<String> loadSourceDirectories() {
-		String envValue = getEnv("FEEDER_SOURCE_DIRECTORIES", "");
+	private static class SourceDirectoriesResult {
+		final List<String> directories;
+		final String source;
 		
-		if (envValue == null || envValue.trim().isEmpty()) {
-			logger.warn("FRS_0401 No source directories configured. Using default: ./test-reports");
-			return Collections.singletonList("./test-reports");
+		SourceDirectoriesResult(List<String> directories, String source) {
+			this.directories = directories;
+			this.source = source;
+		}
+	}
+	
+	/**
+	 * Load configuration from environment variables (for backward compatibility).
+	 * This constructor is equivalent to calling FeederConfig(null).
+	 */
+	public FeederConfig() {
+		this(null);
+	}
+	
+	/**
+	 * Load source directories with priority: command-line > environment variable > default.
+	 * Supports comma or semicolon separated values.
+	 * 
+	 * @param commandLineValue source directories from command line (can be null)
+	 * @return result containing directories and source information
+	 */
+	private SourceDirectoriesResult loadSourceDirectories(String commandLineValue) {
+		String sourceDirectoriesValue = null;
+		String source = null;
+		
+		// Priority 1: Command-line argument
+		if (commandLineValue != null && !commandLineValue.trim().isEmpty()) {
+			sourceDirectoriesValue = commandLineValue.trim();
+			source = "command-line";
+			logger.debug("FRS_0400 Using source directories from command line: {}", sourceDirectoriesValue);
+		} else {
+			// Priority 2: Environment variable
+			sourceDirectoriesValue = getEnv("FEEDER_SOURCE_DIRECTORIES", "");
+			
+			if (sourceDirectoriesValue != null && !sourceDirectoriesValue.trim().isEmpty()) {
+				source = "environment variable";
+				logger.debug("FRS_0400 Using source directories from environment variable: {}", sourceDirectoriesValue);
+			} else {
+				// Priority 3: Default
+				source = "default";
+				logger.warn("FRS_0401 No source directories configured. Using default: ./test-reports");
+				return new SourceDirectoriesResult(
+					Collections.singletonList("./test-reports"),
+					source
+				);
+			}
 		}
 		
+		// Parse comma or semicolon separated directories
 		List<String> directories = new ArrayList<>();
-		String[] dirs = envValue.split("[;,]");
+		String[] dirs = sourceDirectoriesValue.split("[;,]");
 		
 		for (String dir : dirs) {
 			String trimmed = dir.trim();
@@ -60,7 +110,10 @@ public final class FeederConfig {
 			}
 		}
 		
-		return Collections.unmodifiableList(directories);
+		return new SourceDirectoriesResult(
+			Collections.unmodifiableList(directories),
+			source
+		);
 	}
 	
 	/**
@@ -124,7 +177,7 @@ public final class FeederConfig {
 	 */
 	private void logConfiguration() {
 		logger.info("FRS_0400 Feeder configuration loaded:");
-		logger.info("FRS_0400   Source directories: {}", sourceDirectories);
+		logger.info("FRS_0400   Source directories: {} (from {})", sourceDirectories, sourceDirectoriesSource);
 		logger.info("FRS_0400   Scan interval: {} minutes", scanIntervalMinutes);
 		logger.info("FRS_0400   Hazelcast map name: {}", hazelcastMapName);
 	}

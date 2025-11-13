@@ -6,6 +6,7 @@ import com.mastercard.fraudriskscanner.feeder.hazelcast.HazelcastProvider;
 import com.mastercard.fraudriskscanner.feeder.scanning.DirectoryScanner;
 import com.mastercard.fraudriskscanner.feeder.scanning.ScheduledDirectoryScanner;
 import com.mastercard.fraudriskscanner.feeder.semaphore.HazelcastSemaphoreManager;
+import com.mastercard.fraudriskscanner.feeder.util.CommandLineParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,19 +26,22 @@ public class FeederApplication {
 
 	public static void main(String[] args) {
 		FeederApplication app = new FeederApplication();
-		app.start();
+		app.start(args);
 		app.run();
 	}
 
 	/**
 	 * Initialize and start the application.
+	 * 
+	 * @param args command-line arguments
 	 */
-	private void start() {
+	private void start(String[] args) {
 		logger.info("FRS_0200 Starting Feeder Application");
 
 		try {
-			// 1) Load configuration
-			config = new FeederConfig();
+			// 1) Parse command-line arguments and load configuration
+			String sourceDirectories = CommandLineParser.parseSourceDirectories(args);
+			config = new FeederConfig(sourceDirectories);
 
 			// 2) Start Hazelcast (embedded)
 			HazelcastInstance hazelcast = HazelcastProvider.getInstance();
