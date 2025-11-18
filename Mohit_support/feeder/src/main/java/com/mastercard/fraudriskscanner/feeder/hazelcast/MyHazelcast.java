@@ -3,6 +3,8 @@ package com.mastercard.fraudriskscanner.feeder.hazelcast;
 import com.hazelcast.config.ClasspathYamlConfig;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
+import com.mastercard.fraudriskscanner.feeder.config.HazelcastConfig;
+import com.mastercard.fraudriskscanner.feeder.semaphore.HazelcastSemaphoreManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,34 +47,36 @@ public final class MyHazelcast implements AutoCloseable {
 				throw new IllegalStateException("FRS_0451 Hazelcast failed to initialize (instance is null)");
 			}
 			
-			logger.info("FRS_0450 Hazelcast member started. name='{}'", hazelcastInstance.getName());
-			
+
 		} catch (Throwable t) {
-			logger.error("FRS_0451 Failed to start Hazelcast instance", t);
 			throw new MyHazelcastException(t);
 		}
 		
 		// Defensive programming: just in case the close() method isn't called.
 		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
 			if (hazelcastInstance != null) {
-				logger.info("FRS_0452 Shutting down Hazelcast instance (shutdown hook)");
 				hazelcastInstance.shutdown();
 			}
 		}, "hazelcast-shutdown-hook"));
 	}
 	
 	/**
-	 * Get the Hazelcast instance.
+	 * Create a HazelcastSemaphoreManager using this Hazelcast instance.
 	 * 
-	 * @return the Hazelcast instance
-	 * @throws IllegalStateException if instance is not initialized
+	 * This method encapsulates the creation of dependent objects, maintaining
+	 * proper encapsulation and lifecycle management.
+	 * 
+	 * @param hazelcastConfig Hazelcast configuration
+	 * @return HazelcastSemaphoreManager instance
 	 */
-	public HazelcastInstance getHazelcastInstance() {
+	public HazelcastSemaphoreManager createSemaphoreManager(HazelcastConfig hazelcastConfig) {
 		if (hazelcastInstance == null) {
 			throw new IllegalStateException("Hazelcast instance is not initialized");
 		}
-		return hazelcastInstance;
+		return new HazelcastSemaphoreManager(hazelcastInstance, hazelcastConfig);
 	}
+	
+
 	
 	/**
 	 * Shutdown the Hazelcast instance.

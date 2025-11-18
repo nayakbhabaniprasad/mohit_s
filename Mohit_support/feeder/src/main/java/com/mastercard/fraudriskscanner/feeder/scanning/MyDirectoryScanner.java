@@ -1,18 +1,21 @@
 package com.mastercard.fraudriskscanner.feeder.scanning;
 
-import com.mastercard.fraudriskscanner.feeder.config.FeederConfig;
-import com.mastercard.fraudriskscanner.feeder.model.FileFingerprint;
+import com.mastercard.fraudriskscanner.feeder.config.DirectoryScanningConfig;
+import com.mastercard.fraudriskscanner.feeder.config.SchedulingConfig;
+import com.mastercard.fraudriskscanner.feeder.model.MGTuple;
 import com.mastercard.fraudriskscanner.feeder.semaphore.HazelcastSemaphoreManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.AbstractMap;
 import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
@@ -24,6 +27,7 @@ import java.util.stream.Stream;
  * - All underpinnings hidden in private methods (separated concerns)
  * - Clean, simple interface with AutoCloseable for resource management
  * - No null filtering - explicit error handling with Optional
+ * - No state management - starts immediately in constructor, stops only on close
  * 
  * Uses internal private methods to maintain SOLID principles:
  * - Single Responsibility: Each private method has one job
@@ -35,63 +39,44 @@ public final class MyDirectoryScanner implements AutoCloseable {
 	
 	private static final Logger logger = LoggerFactory.getLogger(MyDirectoryScanner.class);
 	
-	// Configuration
-	private final FeederConfig config;
+	// Configuration - separated concerns
+	private final DirectoryScanningConfig directoryConfig;
+	private final SchedulingConfig schedulingConfig;
 	
 	// Dependencies
-	private final DirectoryScanner directoryScanner;
 	private final HazelcastSemaphoreManager semaphoreManager;
 	
-	// Scheduling infrastructure
+	// Scheduling infrastructure - created and started immediately in constructor
 	private final ScheduledExecutorService scheduler;
-	private final AtomicBoolean running = new AtomicBoolean(false);
 	
 	/**
 	 * Create and start a directory scanner.
 	 * 
-	 * Thread management is hidden inside this class - the scheduler thread
-	 * is created and started automatically. All concerns are separated internally.
+	 * The scheduler is created and started immediately - no separate start() method needed.
+	 * Thread management is hidden inside this class. The scanner runs until close() is called.
 	 * 
-	 * @param config feeder configuration
-	 * @param directoryScanner directory scanner instance
+	 * @param directoryConfig directory scanning configuration
+	 * @param schedulingConfig scheduling configuration
 	 * @param semaphoreManager Hazelcast semaphore manager
 	 */
-	public MyDirectoryScanner(FeederConfig config,
-	                         DirectoryScanner directoryScanner,
+	public MyDirectoryScanner(DirectoryScanningConfig directoryConfig,
+	                         SchedulingConfig schedulingConfig,
 	                         HazelcastSemaphoreManager semaphoreManager) {
-		this.config = config;
-		this.directoryScanner = directoryScanner;
+		this.directoryConfig = directoryConfig;
+		this.schedulingConfig = schedulingConfig;
 		this.semaphoreManager = semaphoreManager;
 		
-		// Initialize scheduler (thread management hidden)
+		// Create scheduler (thread management hidden)
 		this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
 			Thread t = new Thread(r, "MyDirectoryScanner");
 			t.setDaemon(false);
 			return t;
 		});
 		
-		// Start scanning
-		start();
-		
-		// Register shutdown hook for graceful cleanup
-		registerShutdownHook();
-		
-		logger.info("FRS_0201 Directory scanning started");
-	}
-	
-	/**
-	 * Start the scheduled scanner.
-	 * Performs an initial scan immediately, then schedules periodic scans.
-	 */
-	private void start() {
-		if (running.getAndSet(true)) {
-			logger.warn("FRS_0440 Scanner is already running");
-			return;
-		}
-		
+		// Start scanning immediately - no separate start() method needed
 		logger.info("FRS_0440 Starting directory scanner");
-		logger.info("FRS_0440   Scan interval: {} minutes", config.getScanIntervalMinutes());
-		logger.info("FRS_0440   Source directories: {}", config.getSourceDirectories());
+		logger.info("FRS_0440   Scan interval: {} minutes", this.schedulingConfig.getScanIntervalMinutes());
+		logger.info("FRS_0440   Source directories: {}", directoryConfig.getSourceDirectories());
 		
 		// Perform initial scan immediately
 		scheduler.execute(this::performScan);
@@ -99,28 +84,33 @@ public final class MyDirectoryScanner implements AutoCloseable {
 		// Schedule periodic scans
 		scheduler.scheduleAtFixedRate(
 			this::performScan,
-			config.getScanIntervalMinutes(),
-			config.getScanIntervalMinutes(),
+			this.schedulingConfig.getScanIntervalMinutes(),
+			this.schedulingConfig.getScanIntervalMinutes(),
 			TimeUnit.MINUTES
 		);
+		
+		logger.info("FRS_0201 Directory scanning started");
+		
+		// Defensive programming: just in case the close() method isn't called.
+		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+			logger.info("FRS_0441 Stopping directory scanner (shutdown hook)");
+			shutdownScheduler();
+		}, "directory-scanner-shutdown-hook"));
 	}
 	
 	/**
 	 * Perform a single scan cycle.
 	 * 
 	 * This is the core operation pipeline with separated concerns:
-	 * 1. Scan directories (DirectoryScanner)
+	 * 1. Scan directories (scanDirectories)
 	 * 2. Validate paths (isValidPath)
-	 * 3. Create fingerprints (createFingerprint)
+	 * 3. Create tuples (createTuple)
 	 * 4. Add tuples to map (addTupleToMap - core operation)
 	 * 
 	 * No null filtering - uses Optional for explicit error handling.
+	 * No state checks - if this method is called, the scanner is running.
 	 */
 	private void performScan() {
-		if (!running.get()) {
-			return;
-		}
-		
 		try {
 			logger.info("FRS_0442 Starting scan cycle");
 			
@@ -129,20 +119,20 @@ public final class MyDirectoryScanner implements AutoCloseable {
 			AtomicLong skippedCount = new AtomicLong(0);
 			
 			// Clean pipeline with separated concerns:
-			// Stream<Path> -> filter valid -> map to Optional<Fingerprint> -> filter present -> add to map
-			try (Stream<Path> fileStream = directoryScanner.scanDirectories(config.getSourceDirectories())) {
+			// Stream<Path> -> filter valid -> map to Optional<MGTuple> -> filter present -> add to map
+			try (Stream<Path> fileStream = scanDirectories(directoryConfig.getSourceDirectories())) {
 				fileStream
 					// Filter valid paths early
 					.filter(this::isValidPath)
-					// Map Path to pair of (Path, Optional<FileFingerprint>) to keep path for logging
-					.map(path -> new AbstractMap.SimpleEntry<>(path, createFingerprint(path)))
+					// Map Path to pair of (Path, Optional<MGTuple>) to keep path for logging
+					.map(path -> new AbstractMap.SimpleEntry<>(path, createTuple(path)))
 					// Filter out entries with empty Optionals (explicit failure handling - no silent nulls)
 					.filter(entry -> entry.getValue().isPresent())
-					// Extract fingerprint and add tuple to map (core operation)
+					// Extract tuple and add to map (core operation)
 					.forEach(entry -> {
 						Path path = entry.getKey();
-						FileFingerprint fingerprint = entry.getValue().get();
-						boolean shouldProcess = addTupleToMap(path, fingerprint);
+						MGTuple tuple = entry.getValue().get();
+						boolean shouldProcess = addTupleToMap(path, tuple);
 						if (shouldProcess) {
 							processedCount.incrementAndGet();
 						} else {
@@ -158,6 +148,102 @@ public final class MyDirectoryScanner implements AutoCloseable {
 			logger.error("FRS_0442 Scan cycle failed", e);
 			// Don't re-throw - allow scheduler to continue
 		}
+	}
+	
+	/**
+	 * Scan all configured directories and return a stream of candidate file paths.
+	 * 
+	 * Uses flatMap to combine streams from multiple directories.
+	 * 
+	 * @param directoryPaths list of directory paths to scan
+	 * @return stream of candidate file paths
+	 */
+	private Stream<Path> scanDirectories(java.util.List<String> directoryPaths) {
+		logger.info("FRS_0430 Starting directory scan for {} directory(ies)", directoryPaths.size());
+		
+		return directoryPaths.stream()
+			.flatMap(this::scanDirectoryToStream)
+			.onClose(() -> logger.info("FRS_0431 Directory scan stream closed"));
+	}
+	
+	/**
+	 * Scan a single directory and return a stream of candidate file paths.
+	 * 
+	 * @param directoryPath path to directory to scan
+	 * @return stream of candidate file paths (empty stream if directory doesn't exist or can't be read)
+	 */
+	private Stream<Path> scanDirectoryToStream(String directoryPath) {
+		Path path = Paths.get(directoryPath);
+		
+		// Validate directory exists
+		if (!Files.exists(path)) {
+			logger.warn("FRS_0432 Directory does not exist: {}", directoryPath);
+			return Stream.empty();
+		}
+		
+		// Validate it's actually a directory
+		if (!Files.isDirectory(path)) {
+			logger.warn("FRS_0432 Path is not a directory: {}", directoryPath);
+			return Stream.empty();
+		}
+		
+		// Validate directory is readable
+		if (!Files.isReadable(path)) {
+			logger.warn("FRS_0432 Directory is not readable: {}", directoryPath);
+			return Stream.empty();
+		}
+		
+		// Scan directory for files using Stream
+		try {
+			Stream<Path> fileStream = Files.list(path)
+				.filter(this::isCandidateFile)
+				.onClose(() -> logger.debug("FRS_0433 Finished scanning directory: {}", directoryPath));
+			
+			return fileStream;
+		} catch (IOException e) {
+			logger.error("FRS_0432 Failed to scan directory: {}", directoryPath, e);
+			return Stream.empty();
+		}
+	}
+	
+	/**
+	 * Determine if a file is a candidate for processing.
+	 * 
+	 * @param filePath path to file
+	 * @return true if file should be processed
+	 */
+	private boolean isCandidateFile(Path filePath) {
+		// Must be a regular file (not a directory)
+		if (!Files.isRegularFile(filePath)) {
+			return false;
+		}
+		
+		// Skip hidden files (Unix/Linux)
+		Path fileName = filePath.getFileName();
+		if (fileName == null) {
+			return false;
+		}
+		
+		String fileNameStr = fileName.toString();
+		if (fileNameStr.startsWith(".")) {
+			return false;
+		}
+		
+		// Skip temporary files
+		if (fileNameStr.endsWith(".tmp") || fileNameStr.endsWith(".temp") || 
+		    fileNameStr.startsWith("~") || fileNameStr.endsWith("~")) {
+			return false;
+		}
+		
+		// Check if file is readable
+		if (!Files.isReadable(filePath)) {
+			logger.debug("File is not readable, skipping: {}", filePath);
+			return false;
+		}
+		
+		// Optional: Check file extension (if configured)
+		// For now, accept all readable regular files
+		return true;
 	}
 	
 	/**
@@ -192,51 +278,36 @@ public final class MyDirectoryScanner implements AutoCloseable {
 	}
 	
 	/**
-	 * Extract filename from a valid path.
-	 * 
-	 * @param path valid file path (must pass isValidPath check)
-	 * @return filename string
-	 * @throws IllegalArgumentException if path is invalid
-	 */
-	private String extractFileName(Path path) {
-		if (!isValidPath(path)) {
-			throw new IllegalArgumentException("Cannot extract filename from invalid path: " + path);
-		}
-		
-		return path.getFileName().toString();
-	}
-	
-	/**
-	 * Create a FileFingerprint from a path.
+	 * Create an MGTuple from a path.
 	 * 
 	 * Returns Optional.empty() if:
 	 * - Path is invalid (no filename, etc.)
-	 * - Fingerprint creation fails (SHA-256 unavailable, etc.)
+	 * - Tuple creation fails (SHA-256 unavailable, etc.)
 	 * 
 	 * @param path file path
-	 * @return Optional containing FileFingerprint if successful, empty otherwise
+	 * @return Optional containing MGTuple if successful, empty otherwise
 	 */
-	private Optional<FileFingerprint> createFingerprint(Path path) {
+	private Optional<MGTuple> createTuple(Path path) {
 		if (!isValidPath(path)) {
-			logger.debug("Cannot create fingerprint for invalid path: {}", path);
+			logger.debug("Cannot create tuple for invalid path: {}", path);
 			return Optional.empty();
 		}
 		
 		try {
-			String fileName = extractFileName(path);
-			FileFingerprint fingerprint = FileFingerprint.fromFileName(fileName);
-			return Optional.of(fingerprint);
+			// Use full path string for tuple creation
+			MGTuple tuple = MGTuple.fromPath(path.toString());
+			return Optional.of(tuple);
 			
 		} catch (IllegalArgumentException e) {
-			logger.error("FRS_0422 Failed to create fingerprint for file: {} - {}", path, e.getMessage());
+			logger.error("FRS_0422 Failed to create tuple for file: {} - {}", path, e.getMessage());
 			return Optional.empty();
 			
 		} catch (IllegalStateException e) {
-			logger.error("FRS_0422 Failed to create fingerprint for file: {} - {}", path, e.getMessage());
+			logger.error("FRS_0422 Failed to create tuple for file: {} - {}", path, e.getMessage());
 			return Optional.empty();
 			
 		} catch (Exception e) {
-			logger.error("FRS_0422 Unexpected error creating fingerprint for file: {}", path, e);
+			logger.error("FRS_0422 Unexpected error creating tuple for file: {}", path, e);
 			return Optional.empty();
 		}
 	}
@@ -248,23 +319,23 @@ public final class MyDirectoryScanner implements AutoCloseable {
 	 * The fact that the map is in Hazelcast is an implementation detail.
 	 * 
 	 * @param path file path (for logging/identification)
-	 * @param fingerprint file fingerprint (the tuple: bound hash + fingerprint)
+	 * @param tuple file tuple (MGTuple: bounding hash + fingerprint)
 	 * @return true if file was added (should be processed), false if already exists (should be skipped)
-	 * @throws IllegalArgumentException if fingerprint is null
+	 * @throws IllegalArgumentException if tuple is null
 	 */
-	private boolean addTupleToMap(Path path, FileFingerprint fingerprint) {
-		if (fingerprint == null) {
-			throw new IllegalArgumentException("Fingerprint cannot be null");
+	private boolean addTupleToMap(Path path, MGTuple tuple) {
+		if (tuple == null) {
+			throw new IllegalArgumentException("Tuple cannot be null");
 		}
 		
 		try {
-			boolean shouldProcess = semaphoreManager.shouldProcessFile(fingerprint);
+			boolean shouldProcess = semaphoreManager.shouldProcessFile(tuple);
 			
 			if (shouldProcess) {
 				logger.info("FRS_0421 File added to map: {} (mapKey: {})", 
-					fingerprint.getFileName(), fingerprint.getMapKey());
+					path, tuple.boundingHash());
 			} else {
-				logger.debug("FRS_0423 File already in map (skip): {}", fingerprint.getFileName());
+				logger.debug("FRS_0423 File already in map (skip): {}", path);
 			}
 			
 			return shouldProcess;
@@ -276,26 +347,10 @@ public final class MyDirectoryScanner implements AutoCloseable {
 	}
 	
 	/**
-	 * Register shutdown hook for graceful cleanup.
-	 */
-	private void registerShutdownHook() {
-		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-			if (running.get()) {
-				logger.info("FRS_0441 Stopping directory scanner (shutdown hook)");
-				stop();
-			}
-		}, "directory-scanner-shutdown-hook"));
-	}
-	
-	/**
-	 * Stop the scanner.
+	 * Shutdown the scheduler.
 	 * Waits for current scan to complete, then shuts down scheduler.
 	 */
-	private void stop() {
-		if (!running.getAndSet(false)) {
-			return;
-		}
-		
+	private void shutdownScheduler() {
 		logger.info("FRS_0441 Stopping directory scanner");
 		
 		scheduler.shutdown();
@@ -322,15 +377,6 @@ public final class MyDirectoryScanner implements AutoCloseable {
 	 */
 	@Override
 	public void close() {
-		stop();
-	}
-	
-	/**
-	 * Check if scanner is running.
-	 * 
-	 * @return true if scanner is running
-	 */
-	public boolean isRunning() {
-		return running.get();
+		shutdownScheduler();
 	}
 }
